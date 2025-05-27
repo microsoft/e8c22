@@ -50,7 +50,7 @@ environs = ">=9.5.0"
 fastapi = ">=0.110.0"
 fastparquet = ">=2023.10.1"
 fsspec = ">=2024.2.0"
-graphrag = "==1.2.0"
+graphrag = "==2.3.0"
 httpx = ">=0.25.2"
 kubernetes = ">=29.0.0"
 markitdown = {extras = ["all"], version = "^0.1.1"}
