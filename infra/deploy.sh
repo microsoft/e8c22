@@ -281,7 +281,7 @@ getAksCredentials () {
     local aks_name
     local principalId
     local scope
-
+    export MSYS_NO_PATHCONV=1
     printf "Getting AKS credentials... "
     aks_name=$(jq -r .azure_aks_name.value <<< $AZURE_DEPLOY_OUTPUTS)
     az aks get-credentials -g $rg -n $aks_name --overwrite-existing > /dev/null 2>&1
@@ -353,6 +353,7 @@ deployAzureResources () {
     datetime="`date +%Y-%m-%d_%H-%M-%S`"
     deployName="graphrag-deploy-$datetime"
     echo "Deployment name: $deployName"
+    export MSYS_NO_PATHCONV=1
     AZURE_DEPLOY_RESULTS=$(az deployment group create --name "$deployName" \
         --no-prompt \
         --resource-group $RESOURCE_GROUP \
@@ -395,7 +396,7 @@ assignACRPullRoleToAKS() {
     local rg=$1
     local registry=$2
     local aks_name kubelet_id acr_id
-
+    export MSYS_NO_PATHCONV=1
     echo "Assigning 'ACRPull' role to AKS..."
     aks_name=$(jq -r .azure_aks_name.value <<< $AZURE_DEPLOY_OUTPUTS)
     exitIfValueEmpty "$aks_name" "Unable to parse aks name from azure outputs, exiting..."
@@ -469,7 +470,7 @@ installGraphRAGHelmChart () {
     local graphragImageName graphragImageVersion
     local workloadId serviceAccountName appInsightsConnectionString aiSearchName cosmosEndpoint appHostname storageAccountBlobUrl
     local graphragApiBase graphragApiVersion graphragLlmModel graphragLlmModelDeployment graphragEmbeddingModel graphragEmbeddingModelDeployment
-
+    export MSYS_NO_PATHCONV=1
     echo "Deploying graphrag helm chart... "
     workloadId=$(jq -r .azure_workload_identity_client_id.value <<< $AZURE_DEPLOY_OUTPUTS)
     exitIfValueEmpty "$workloadId" "Unable to parse workload id from Azure outputs, exiting..."
@@ -610,7 +611,7 @@ waitForGraphragBackend () {
 deployDnsRecord () {
     waitForExternalIp
     exitIfValueEmpty "$GRAPHRAG_SERVICE_IP" "Unable to get GraphRAG external IP."
-
+    export MSYS_NO_PATHCONV=1
     local dnsZoneName
     dnsZoneName=$(jq -r .azure_dns_zone_name.value <<< $AZURE_DEPLOY_OUTPUTS)
     exitIfValueEmpty "$dnsZoneName" "Error parsing DNS zone name from azure outputs, exiting..."
@@ -626,7 +627,7 @@ deployDnsRecord () {
 
 deployGraphragAPI () {
     local apimGatewayUrl apimName backendSwaggerUrl graphragUrl
-
+    export MSYS_NO_PATHCONV=1
     echo "Registering GraphRAG API with APIM..."
     apimGatewayUrl=$(jq -r .azure_apim_gateway_url.value <<< $AZURE_DEPLOY_OUTPUTS)
     exitIfValueEmpty "$apimGatewayUrl" "Unable to parse APIM gateway url from Azure outputs, exiting..."
@@ -709,22 +710,23 @@ grantDevAccessToAzureResources() {
         --scope "/subscriptions/$subscriptionId/resourceGroups/$RESOURCE_GROUP/providers/Microsoft.Search/searchServices/$searchServiceName" > /dev/null
 }
 
+export GRAPHRAG_IMAGE="graphrag:backend"
+export AZURE_DEPLOY_OUTPUTS='{"azure_acr_login_server": {"value": "cr7iqtpcplhcdnu.azurecr.io"}}'
+
 deployDockerImageToInternalACR() {
     local containerRegistry
     containerRegistry=$(jq -r .azure_acr_login_server.value <<< $AZURE_DEPLOY_OUTPUTS)
-    exitIfValueEmpty "$containerRegistry" "Unable to parse container registry from azure deployment outputs, exiting..."
     echo "Deploying docker image '${GRAPHRAG_IMAGE}' to container registry '${containerRegistry}'..."
 
     local scriptDir
-    scriptDir="$( cd -- "$( dirname -- "${BASH_SOURCE[0]:-$0}"; )" &> /dev/null && pwd 2> /dev/null; )";
+    scriptDir=$(cygpath -w "$(pwd)")
+
     az acr build --only-show-errors \
         --registry $containerRegistry \
-        --file $scriptDir/../docker/Dockerfile-backend \
+        --file "$scriptDir/../docker/Dockerfile-backend" \
         --image $GRAPHRAG_IMAGE \
-        $scriptDir/../
-    exitIfCommandFailed $? "Error deploying docker image, exiting..."
+        "$scriptDir/../"
 }
-
 ################################################################################
 # Help menu                                                                    #
 ################################################################################
