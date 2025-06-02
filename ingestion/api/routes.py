@@ -4,7 +4,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Query, HTTPException
 
-from ingestion.utils.search import BlobStorageConfig, BingSearchService, NewsApiSearchService
+from ingestion.utils.search import BlobStorageConfig, BingSearchService, NewsApiSearchService, KaggleSearchService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -106,3 +106,44 @@ async def newsapi_search(
         logger.error(f"News API search error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
     
+@router.post(
+    "/kaggle",
+    summary="Kaggle Search Endpoint",
+    description="Search for news articles using Kaggle."    
+)
+async def kaggle_search(    
+):
+    try:
+        config = BlobStorageConfig(
+            blob_account_url=os.environ.get("BLOB_ACCOUNT_URL"),
+            blob_storage_container_name=os.environ.get("BLOB_STORAGE_CONTAINER_NAME"),
+            blob_storage_connection_string=os.environ.get("BLOB_STORAGE_CONNECTION_STRING")
+        )
+        service = KaggleSearchService(config)
+        result = service.search()
+        
+        return result
+    except Exception as e:
+        logger.error(f"Kaggle search error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post(
+    "/kaggle",
+    summary="Kaggle Search Endpoint",
+    description="Search for news articles using Kaggle."    
+)
+async def kaggle_search(    
+):
+    try:
+        config = BlobStorageConfig(
+            blob_account_url=os.environ.get("BLOB_ACCOUNT_URL"),
+            blob_storage_container_name=os.environ.get("BLOB_STORAGE_CONTAINER_NAME"),
+            blob_storage_connection_string=os.environ.get("BLOB_STORAGE_CONNECTION_STRING")
+        )
+        service = KaggleSearchService(config)
+        articles = service.search()
+        
+        return articles
+    except Exception as e:
+        logger.error(f"Kaggle search error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

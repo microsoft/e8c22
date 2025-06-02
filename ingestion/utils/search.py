@@ -5,6 +5,7 @@ import time
 import random
 import string
 import uuid
+import json
 from abc import ABC, abstractmethod
 
 from typing import List, Any, Optional, List, Dict
@@ -295,3 +296,42 @@ class NewsApiSearchService(BaseSearchService):
         
         return news
     
+class KaggleSearchService(BaseSearchService):
+    """Service for loading and processing articles from a local Kaggle file"""
+
+    def __init__(self, config: BlobStorageConfig):
+        super().__init__(config)
+        self.required_vars = [                     
+            "BLOB_STORAGE_CONTAINER_NAME"
+        ]
+        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+
+    def search(self) -> List[ArticleData]:
+        """
+        Loads a JSON file, extracts article URLs, processes articles, and uploads them to blob storage.
+        :return: List of processed ArticleData.
+        """        
+        EnvironmentValidator.validate_required_vars(self.required_vars)        
+            
+        file_path = os.path.dirname(os.path.dirname(__file__))
+        data_folder = os.path.join(file_path, "data")
+        data_folder = os.path.abspath(data_folder)     
+        file_path = os.path.abspath(os.path.join(data_folder, "kagglenews.json"))
+        
+        self.logger.info(f"Loading JSON file from {file_path}")
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(f"JSON file not found: {file_path}")
+
+        with open(file_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        urls = []
+        for entry in data:
+            url = entry.get("link")
+            if url:
+                urls.append(url)
+
+        self.logger.info(f"Extracted {len(urls)} URLs from JSON file.")
+        articles = self._process_articles(urls)
+        
+        return articles

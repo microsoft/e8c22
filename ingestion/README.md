@@ -6,12 +6,14 @@ This FastAPI application provides search endpoints that leverage:
 
 * **Azure AI Project Client and Bing Grounding** for web search and AI agent responses.
 * **NewsAPI.org** for retrieving news articles from hundreds of sources.
+* **Kaggle news datasets** for local news article ingestion and extraction.
 * **Azure Blob Storage** for storing extracted article content.
 
 The app supports:
 
 * Initializing an AI agent with Bing Grounding, managing threads and messages, and extracting article contents.
 * Searching for recent and relevant news headlines and stories using NewsAPI.
+* Loading and processing news articles from a local Kaggle JSON file.
 * **Uploading extracted article content to Azure Blob Storage** for persistent storage and later retrieval.
 
 ---
@@ -20,7 +22,8 @@ The app supports:
 
 * **Bing Search Endpoint:** Accepts a query string and returns search results using Bing Grounding and Azure AI integration.
 * **News API Endpoint:** Accepts a query and returns news articles from NewsAPI.
-* **Automatic Article Extraction:** Scrapes main article content from URLs returned by Bing or NewsAPI (using `newspaper3k`).
+* **Kaggle Endpoint:** Loads and processes news articles from a local Kaggle JSON file.
+* **Automatic Article Extraction:** Scrapes main article content from URLs returned by Bing, NewsAPI, or Kaggle (using `newspaper3k`).
 * **Azure Blob Storage Integration:** Extracted article content is uploaded to Azure Blob Storage, with metadata for each article.
 * **Swagger Docs:** Automatic OpenAPI docs available at `/docs`.
 
@@ -31,20 +34,20 @@ The app supports:
 * Python 3.12
 * [Azure subscription](https://portal.azure.com/)
 * Azure AI Agent configured with Bing Grounding enabled
-
   * [AI Agent Quickstart](https://learn.microsoft.com/en-us/azure/ai-services/agents/quickstart?pivots=ai-foundry-portal)
   * [Bing Grounding documentation](https://learn.microsoft.com/en-us/azure/ai-services/agents/how-to/tools/bing-grounding)
 * [NewsAPI account](https://newsapi.org/) (free tier is sufficient)
 * **Azure Blob Storage account** (for storing article content)
 * **Microsoft Entra ID Service Principal** for secure authentication (see below)
+* **Kaggle news JSON file** (for `/kaggle` endpoint)
 * Environment variables:
-
   * `AI_FOUNDRY_PROJECT_ENDPOINT`: Azure AI Project connection string
   * `BING_CONNECTION_NAME`: Name of Bing connection in Azure AI Project
   * `NEWS_API_KEY`: API key from NewsAPI.org
   * `BLOB_ACCOUNT_URL`: Azure Blob Storage account URL (e.g., `https://<account>.blob.core.windows.net/`)
   * `BLOB_STORAGE_CONTAINER_NAME`: Name of the blob container to use
   * `BLOB_STORAGE_CONNECTION_STRING`: (optional) Azure Storage connection string
+  * `KAGGLE_FILE_NAME`: Name of the Kaggle JSON file in the `data/` directory (e.g., `kagglenews.json`)
   * `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `AZURE_TENANT_ID`: Service principal credentials
 
 ---
@@ -77,13 +80,13 @@ For local development outside of containers, the Azure SDK will use your Azure C
      Assign the **Cognitive Services User** role to your service principal.
      - In the Azure Portal, go to your Azure AI resource.
      - Open **Access control (IAM)** > **Add role assignment**.
-     - Select **Cognitive Services User** and assign it to your service principal.
+     - Select **Cognitive Services User** and assign it to your app registration.
 
    - **Azure Storage Account:**  
      Assign the **Storage Blob Data Contributor** role to your service principal.
      - In the Azure Portal, go to your Storage Account.
      - Open **Access control (IAM)** > **Add role assignment**.
-     - Select **Storage Blob Data Contributor** and assign it to your service principal.
+     - Select **Storage Blob Data Contributor** and assign it to your app registration.
 
 3. **Configure Environment Variables:**
 
@@ -171,6 +174,13 @@ and have access to the required resources.
    export BLOB_STORAGE_CONNECTION_STRING="<your_blob_connection_string>"
    ```
 
+   For Kaggle endpoint:
+
+   ```bash
+   export KAGGLE_FILE_NAME="kagglenews.json"
+   # Place your Kaggle news JSON file in the data/ directory
+   ```
+
    For Azure authentication (Service Principal):
 
    ```bash
@@ -188,6 +198,7 @@ and have access to the required resources.
    BLOB_ACCOUNT_URL=...
    BLOB_STORAGE_CONTAINER_NAME=...
    BLOB_STORAGE_CONNECTION_STRING=...
+   KAGGLE_FILE_NAME=kagglenews.json
    AZURE_CLIENT_ID=...
    AZURE_CLIENT_SECRET=...
    AZURE_TENANT_ID=...
@@ -207,6 +218,7 @@ and have access to the required resources.
 
    * `http://localhost:8000/bingsearch?query=<your_search_query>`
    * `http://localhost:8000/newsapi?query=<your_news_query>&language=en`
+   * `http://localhost:8000/kaggle` (POST)
 
 3. **Swagger Documentation:**
 
@@ -214,33 +226,26 @@ and have access to the required resources.
    http://localhost:8000/docs
    ```
 
-   > **Note:** This is a proof-of-concept and performance is not optimized.  
-
 ---
 
 ## API Endpoints
 
-### `/bingsearch`
+### `/bingsearch` (GET)
 
 * **Summary:** Search Endpoint using Bing Grounding
 * **Description:** Accepts a query string and returns search results via Azure AI agent.
-* **Method:** GET
 * **Query Parameters:**
-
   * `query` (string, required): The search query.
 * **Returns:**
-
   * `dict`: Search results, annotations, and extracted article content.
 
 ---
 
-### `/newsapi`
+### `/newsapi` (GET)
 
 * **Summary:** News API Search Endpoint
 * **Description:** Searches for news articles using [NewsAPI.org](https://newsapi.org/).
-* **Method:** GET
 * **Query Parameters:** (all optional except `query`)
-
   * `query` (string, required): Search keywords or phrases.
   * `searchIn`: Restrict search to `title`, `description`, `content` (comma-separated).
   * `sources`: News source identifiers (comma-separated, max 20).
@@ -250,22 +255,46 @@ and have access to the required resources.
   * `to`: Newest article date.
   * `language`: 2-letter code (default: `en`).
   * `sortBy`: `relevancy`, `popularity`, or `publishedAt` (default: `publishedAt`).
-  * `pageSize`: Results per page (1–100, default 100).
-  * `page`: Page number (default 1).
+  * `pageSize`: Results per page (default: 10, max: 10).
+  * `page`: Page number (default: 1).
 * **Returns:**
-
   * `dict`: NewsAPI search results, including URLs and main article text where possible.
   * **Note:** Extracted article content is uploaded to Azure Blob Storage, and metadata (such as article URL and title) is stored with each blob.
+
+---
+
+### `/kaggle` (POST)
+
+* **Summary:** Kaggle Search Endpoint
+* **Description:** Loads and processes news articles from a local Kaggle JSON file, extracts article content, and uploads it to Azure Blob Storage.
+* **Environment Variable Required:**
+  - `KAGGLE_FILE_NAME`: Name of the Kaggle JSON file in the `data/` directory (e.g., `kagglenews.json`).
+* **Request Body:** None
+* **Returns:**
+  * `list`: List of processed articles with extracted content.
 
 **Example:**
 
 ```http
-GET /newsapi?query=openai&language=en
+POST http://localhost:8000/kaggle
+```
+
+**Response:**
+
+```json
+[
+  {
+    "url": "https://www.huffpost.com/entry/covid-boosters-uptake-us_n_632d719ee4b087fae6feaac9",
+    "title": "Over 4 Million Americans Roll Up Sleeves For Omicron-Targeted COVID Boosters",
+    "text": "..."
+  },
+  ...
+]
 ```
 
 ---
 
-## Example Request
+## Example Requests
 
 ### Bing Search
 
@@ -279,9 +308,15 @@ GET http://localhost:8000/bingsearch?query=wisconsin%20election
 GET http://localhost:8000/newsapi?query=artificial%20intelligence&language=en
 ```
 
+### Kaggle
+
+```http
+POST http://localhost:8000/kaggle
+```
+
 ---
 
-## Example Response
+## Example Responses
 
 <details>
 <summary>Bing Search Example</summary>
@@ -331,11 +366,26 @@ GET http://localhost:8000/newsapi?query=artificial%20intelligence&language=en
 
 </details>
 
+<details>
+<summary>Kaggle Example</summary>
+
+```json
+[
+  {
+    "url": "https://www.huffpost.com/entry/covid-boosters-uptake-us_n_632d719ee4b087fae6feaac9",
+    "title": "Over 4 Million Americans Roll Up Sleeves For Omicron-Targeted COVID Boosters",
+    "text": "..."
+  }
+]
+```
+
+</details>
+
 ---
 
 ## Azure Blob Storage Integration
 
-When articles are extracted from Bing or NewsAPI results, their main content is **uploaded to Azure Blob Storage**. Each blob is named uniquely and includes metadata such as the article URL and title. This allows for persistent storage and later retrieval of article content.
+When articles are extracted from Bing, NewsAPI, or Kaggle results, their main content is **uploaded to Azure Blob Storage**. Each blob is named uniquely and includes metadata such as the article URL and title. This allows for persistent storage and later retrieval of article content.
 
 **Blob Storage Setup:**
 - Ensure you have created a blob container in your Azure Storage account.
