@@ -31,17 +31,104 @@ The app supports:
 * Python 3.12
 * [Azure subscription](https://portal.azure.com/)
 * Azure AI Agent configured with Bing Grounding enabled
+
   * [AI Agent Quickstart](https://learn.microsoft.com/en-us/azure/ai-services/agents/quickstart?pivots=ai-foundry-portal)
-  * [Bing Grounding documentation](https://learn.microsoft.com/en-us/azure/ai-services/agents/how-to/tools/bing-grounding)  
+  * [Bing Grounding documentation](https://learn.microsoft.com/en-us/azure/ai-services/agents/how-to/tools/bing-grounding)
 * [NewsAPI account](https://newsapi.org/) (free tier is sufficient)
 * **Azure Blob Storage account** (for storing article content)
+* **Microsoft Entra ID Service Principal** for secure authentication (see below)
 * Environment variables:
+
   * `AI_FOUNDRY_PROJECT_ENDPOINT`: Azure AI Project connection string
   * `BING_CONNECTION_NAME`: Name of Bing connection in Azure AI Project
   * `NEWS_API_KEY`: API key from NewsAPI.org
   * `BLOB_ACCOUNT_URL`: Azure Blob Storage account URL (e.g., `https://<account>.blob.core.windows.net/`)
   * `BLOB_STORAGE_CONTAINER_NAME`: Name of the blob container to use
   * `BLOB_STORAGE_CONNECTION_STRING`: (optional) Azure Storage connection string
+  * `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`, `AZURE_TENANT_ID`: Service principal credentials
+
+---
+
+## Azure Authentication & Permissions
+
+This application uses Azure Active Directory (Microsoft Entra ID) for secure authentication to Azure resources.  
+
+**When running in a Docker container or CI/CD, a Service Principal is recommended.**  
+
+If you deploy this app to Azure (such as Azure Container Instances or Azure Kubernetes Service), use a [Managed Identity](https://learn.microsoft.com/en-us/azure/active-directory/managed-identities-azure-resources/overview) for authentication.  
+
+When running locally as a Docker container, create and use a service principal.  
+
+For local development outside of containers, the Azure SDK will use your Azure CLI credentials (your user principal) by default.
+
+### Service Principal Setup (Recommended for Docker/CI)
+
+1. **Create a Service Principal:**
+
+   ```sh
+   az ad sp create-for-rbac --name "<your-app-name>" --skip-assignment
+   ```
+
+   Save the output values for `appId` (client ID), `password` (client secret), and `tenant`.
+
+2. **Assign Permissions:**
+
+   - **Azure AI Resource:**  
+     Assign the **Cognitive Services User** role to your service principal.
+     - In the Azure Portal, go to your Azure AI resource.
+     - Open **Access control (IAM)** > **Add role assignment**.
+     - Select **Cognitive Services User** and assign it to your service principal.
+
+   - **Azure Storage Account:**  
+     Assign the **Storage Blob Data Contributor** role to your service principal.
+     - In the Azure Portal, go to your Storage Account.
+     - Open **Access control (IAM)** > **Add role assignment**.
+     - Select **Storage Blob Data Contributor** and assign it to your service principal.
+
+3. **Configure Environment Variables:**
+
+   Add these to your `.env` file or Docker environment:
+
+   ```
+   AZURE_CLIENT_ID=<appId>
+   AZURE_CLIENT_SECRET=<password>
+   AZURE_TENANT_ID=<tenant>
+   ```
+
+   When running your container, pass the `.env` file:
+
+   ```sh
+   docker run --env-file .env -p 8000:8000 myapp
+   ```
+
+---
+
+### Managed Identity (Recommended for Azure-hosted containers)
+
+If you deploy this app to Azure Container Instances, Azure Kubernetes Service, or similar, you can use a [Managed Identity](https://learn.microsoft.com/en-us/azure/active-directory/managed-identities-azure-resources/overview) instead of a service principal.  
+Assign the same roles (**Cognitive Services User** for Azure AI, **Storage Blob Data Contributor** for Storage) to the managed identity.
+
+---
+
+### Local Development
+
+When running locally, the Azure SDK will use your Azure CLI credentials by default (your user principal).  
+Make sure you are logged in with:
+
+```sh
+az login
+```
+
+and have access to the required resources.
+
+---
+
+**Summary of Required Roles:**
+
+| Resource Type         | Role Name                     |
+|---------------------- |------------------------------|
+| Azure AI Resource     | Cognitive Services User       |
+| Azure Storage Account | Storage Blob Data Contributor |
 
 ---
 
@@ -54,16 +141,11 @@ The app supports:
    cd <repository_directory>
    ```
 
-2. **Install dependencies with Poetry:**
+2. **Install dependencies:**
 
-   If you don't have Poetry installed, install it first:
    ```bash
-   pip install poetry
+   pip install -r requirements.txt
    ```
-
-   Then install project dependencies:
-   ```bash
-   poetry install   
 
 3. **Set required environment variables:**
 
@@ -89,14 +171,26 @@ The app supports:
    export BLOB_STORAGE_CONNECTION_STRING="<your_blob_connection_string>"
    ```
 
+   For Azure authentication (Service Principal):
+
+   ```bash
+   export AZURE_CLIENT_ID="<your_service_principal_appId>"
+   export AZURE_CLIENT_SECRET="<your_service_principal_password>"
+   export AZURE_TENANT_ID="<your_tenant_id>"
+   ```
+
    Optionally, use a `.env` file in your project root (see [dotenv documentation](https://pypi.org/project/python-dotenv/)):
 
+   ```
    AI_FOUNDRY_PROJECT_ENDPOINT=...
    BING_CONNECTION_NAME=...
    NEWS_API_KEY=...
    BLOB_ACCOUNT_URL=...
    BLOB_STORAGE_CONTAINER_NAME=...
    BLOB_STORAGE_CONNECTION_STRING=...
+   AZURE_CLIENT_ID=...
+   AZURE_CLIENT_SECRET=...
+   AZURE_TENANT_ID=...
    ```
 
 ---
@@ -247,6 +341,7 @@ When articles are extracted from Bing or NewsAPI results, their main content is 
 - Ensure you have created a blob container in your Azure Storage account.
 - Set the required environment variables (`BLOB_ACCOUNT_URL`, `BLOB_STORAGE_CONTAINER_NAME`, and optionally `BLOB_STORAGE_CONNECTION_STRING`).
 - The application will automatically upload extracted article text to this container.
+- **Assign the Storage Blob Data Contributor role to your service principal** for access.
 
 ---
 
