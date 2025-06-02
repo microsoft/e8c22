@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+azure-ai-projects
+azure-identity
+azure-storage-blob
+azure-core
+newspaper3k
+newsapi-python
+lxml_html_clean
