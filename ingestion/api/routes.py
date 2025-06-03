@@ -2,22 +2,33 @@ import os
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Depends
+from fastapi.responses import RedirectResponse
 
-from ingestion.utils.search import BlobStorageConfig, BingSearchService, NewsApiSearchService, KaggleSearchService
+from utils.search import BlobStorageConfig, BingSearchService, NewsApiSearchService, KaggleSearchService
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+def get_blob_storage_config():
+    return BlobStorageConfig(
+        blob_account_url=os.environ.get("BLOB_ACCOUNT_URL"),
+        blob_storage_container_name=os.environ.get("BLOB_STORAGE_CONTAINER_NAME"),
+        blob_storage_connection_string=os.environ.get("BLOB_STORAGE_CONNECTION_STRING")
+)
+
+
+@router.get("/", include_in_schema=False)
+async def root_redirect():
+    return RedirectResponse(url="/docs")
+
+
 @router.get("/bingsearch", summary="Grounding with Bing Search Endpoint", description="Search for information using the Bing Grounding AI agent.")
-async def bing_search(query: str = Query(..., description="Search query")):
+async def bing_search(
+    query: str = Query(..., description="Search query"),
+    config: BlobStorageConfig = Depends(get_blob_storage_config)):
     try:
-        config = BlobStorageConfig(            
-            blob_account_url=os.environ.get("BLOB_ACCOUNT_URL"),
-            blob_storage_container_name=os.environ.get("BLOB_STORAGE_CONTAINER_NAME"),
-            blob_storage_connection_string=os.environ.get("BLOB_STORAGE_CONNECTION_STRING")
-        )
         service = BingSearchService(config)
         return service.search(query)
     except Exception as e:
@@ -34,7 +45,7 @@ async def newsapi_search(
             "Keywords or phrases to search for in the article title and body. "
             "Advanced search: quotes (\") for exact, + for must include, - for exclude, "
             "AND/OR/NOT for logic, group with parentheses. URL-encoded."
-        )
+        ),        
     ),
     searchIn: Optional[str] = Query(
         None,
@@ -80,14 +91,10 @@ async def newsapi_search(
         1,
         ge=1,
         description="Page number for results pagination."
-    )
-):
+    ),
+    config: BlobStorageConfig = Depends(get_blob_storage_config)
+):  
     try:
-        config = BlobStorageConfig(
-            blob_account_url=os.environ.get("BLOB_ACCOUNT_URL"),
-            blob_storage_container_name=os.environ.get("BLOB_STORAGE_CONTAINER_NAME"),
-            blob_storage_connection_string=os.environ.get("BLOB_STORAGE_CONNECTION_STRING")
-        )
         service = NewsApiSearchService(config)
         search_params = {
             "sources": sources,
@@ -105,41 +112,17 @@ async def newsapi_search(
     except Exception as e:
         logger.error(f"News API search error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
     
 @router.post(
     "/kaggle",
     summary="Kaggle Search Endpoint",
     description="Search for news articles using Kaggle."    
 )
-async def kaggle_search(    
+async def kaggle_search(
+    config: BlobStorageConfig = Depends(get_blob_storage_config)    
 ):
     try:
-        config = BlobStorageConfig(
-            blob_account_url=os.environ.get("BLOB_ACCOUNT_URL"),
-            blob_storage_container_name=os.environ.get("BLOB_STORAGE_CONTAINER_NAME"),
-            blob_storage_connection_string=os.environ.get("BLOB_STORAGE_CONNECTION_STRING")
-        )
-        service = KaggleSearchService(config)
-        result = service.search()
-        
-        return result
-    except Exception as e:
-        logger.error(f"Kaggle search error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.post(
-    "/kaggle",
-    summary="Kaggle Search Endpoint",
-    description="Search for news articles using Kaggle."    
-)
-async def kaggle_search(    
-):
-    try:
-        config = BlobStorageConfig(
-            blob_account_url=os.environ.get("BLOB_ACCOUNT_URL"),
-            blob_storage_container_name=os.environ.get("BLOB_STORAGE_CONTAINER_NAME"),
-            blob_storage_connection_string=os.environ.get("BLOB_STORAGE_CONNECTION_STRING")
-        )
         service = KaggleSearchService(config)
         articles = service.search()
         
